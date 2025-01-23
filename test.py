@@ -2,9 +2,10 @@ import torch
 from torch.utils.data import DataLoader
 from nuscenes_loader import NuScenesDataset
 from relifusion_model import ReliFusion
+from utils.visualization_utils import overlay_lidar_on_image, plot_feature_map
+from utils.data_utils import voxelize_point_cloud
 import argparse
 import matplotlib.pyplot as plt
-import numpy as np
 
 # Argument Parser
 parser = argparse.ArgumentParser(description="Test ReliFusion Model on NuScenes Dataset")
@@ -34,37 +35,6 @@ print("Initializing ReliFusion Model...")
 model = ReliFusion(lidar_input_dim=4, camera_input_channels=3, hidden_dim=256).to(DEVICE)
 model.eval()
 
-# Visualization Function
-def visualize_output(lidar_data, camera_data, outputs):
-    """Visualize model inputs and outputs."""
-    batch_size = lidar_data.size(0)
-    for i in range(batch_size):
-        plt.figure(figsize=(12, 6))
-
-        # Visualize Camera Input
-        plt.subplot(1, 3, 1)
-        plt.title("Camera Input")
-        cam_image = camera_data[i].cpu().numpy().transpose(1, 2, 0)  # Convert to HxWxC
-        plt.imshow(cam_image / np.max(cam_image))
-        plt.axis("off")
-
-        # Visualize LiDAR Input
-        plt.subplot(1, 3, 2)
-        plt.title("LiDAR Input (Projection)")
-        lidar_points = lidar_data[i][0].cpu().numpy()  # Taking first channel as example
-        plt.imshow(lidar_points, cmap="viridis")
-        plt.axis("off")
-
-        # Visualize Model Output
-        plt.subplot(1, 3, 3)
-        plt.title("Model Output")
-        output_features = outputs[i].cpu().numpy()
-        plt.imshow(output_features, cmap="coolwarm")
-        plt.axis("off")
-
-        plt.tight_layout()
-        plt.show()
-
 # Test Loop
 print("Starting Inference...")
 with torch.no_grad():
@@ -76,8 +46,11 @@ with torch.no_grad():
         # Forward Pass
         outputs = model(lidar_data, camera_data)
 
-        # Visualize Results
-        visualize_output(lidar_data, camera_data, outputs)
+        # Visualization
+        for i in range(lidar_data.size(0)):
+            voxel_grid = voxelize_point_cloud(lidar_data[i].cpu().numpy())
+            overlay_lidar_on_image(camera_data[i].cpu().numpy().transpose(1, 2, 0), outputs[i].cpu().numpy())
+            plot_feature_map(outputs[i].cpu().numpy(), title=f"Feature Map Batch {batch_idx + 1} Sample {i + 1}")
 
         # Process Results
         print(f"Batch {batch_idx + 1}/{len(dataloader)}: Output Shape: {outputs.shape}")
