@@ -2,10 +2,12 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from nuscenes_loader import NuScenesDataset
-from relifusion_model import ReliFusion
+from DataSet import NuScenesDataset
+from model import ReliFusion
 from logger import Logger
 from torch.utils.tensorboard import SummaryWriter
+from utils.loss_utils import MultiTaskLoss
+from utils.data_utils import voxelize_point_cloud
 import argparse
 
 # Argument Parser
@@ -49,7 +51,7 @@ model = ReliFusion(lidar_input_dim=4, camera_input_channels=3, hidden_dim=256).t
 
 # Loss and Optimizer
 logger.info("Setting up Loss and Optimizer...")
-criterion = nn.MSELoss()  # Example: replace with appropriate multi-task loss
+criterion = MultiTaskLoss()  # Use multi-task loss from loss_utils
 optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 
 # Training Loop
@@ -67,20 +69,30 @@ for epoch in range(EPOCHS):
         optimizer.zero_grad()
         outputs = model(lidar_data, camera_data)
 
+        # Dummy targets for multi-task loss (Replace with actual labels as per task requirements)
+        detection_target = torch.zeros_like(outputs).to(DEVICE)
+        contrastive_target = torch.randint(0, 5, (outputs.size(0),)).to(DEVICE)
+        temporal_target = torch.zeros_like(outputs).to(DEVICE)
+        confidence_target = torch.ones(outputs.size(0), 1).to(DEVICE)
+
         # Compute Loss
-        # Example loss: compute based on ground truth (replace with actual task-specific labels)
-        labels = torch.zeros_like(outputs).to(DEVICE)  # Placeholder labels
-        loss = criterion(outputs, labels)
+        total_loss, loss_components = criterion(
+            detection_output=outputs, detection_target=detection_target,
+            contrastive_output=outputs, contrastive_target=contrastive_target,
+            temporal_output=outputs, temporal_target=temporal_target,
+            confidence_output=outputs, confidence_target=confidence_target
+        )
 
         # Backward Pass and Optimization
-        loss.backward()
+        total_loss.backward()
         optimizer.step()
 
-        epoch_loss += loss.item()
-        logger.info(f"Epoch [{epoch + 1}/{EPOCHS}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss.item():.4f}")
+        epoch_loss += total_loss.item()
+        logger.info(f"Epoch [{epoch + 1}/{EPOCHS}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {total_loss.item():.4f}")
+        logger.info(f"Loss Components: {loss_components}")
 
         # Log to TensorBoard
-        writer.add_scalar("Loss/Batch", loss.item(), epoch * len(train_loader) + batch_idx)
+        writer.add_scalar("Loss/Batch", total_loss.item(), epoch * len(train_loader) + batch_idx)
 
     avg_loss = epoch_loss / len(train_loader)
     logger.info(f"Epoch [{epoch + 1}/{EPOCHS}] completed with Average Loss: {avg_loss:.4f}")
