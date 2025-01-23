@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from lidar_backbone import VoxelNetBackbone
+from camera_backbone import ConvMixerBackbone
 
 class SpatioTemporalFeatureAggregation(nn.Module):
     def __init__(self, input_dim, hidden_dim):
@@ -29,7 +30,16 @@ class SpatioTemporalFeatureAggregation(nn.Module):
 class ReliabilityModule(nn.Module):
     def __init__(self, feature_dim):
         super(ReliabilityModule, self).__init__()
-        self.fc = nn.Sequential(
+        # Contrastive Module for feature alignment
+        self.contrastive_module = nn.Sequential(
+            nn.Linear(feature_dim, feature_dim // 2),
+            nn.ReLU(),
+            nn.Linear(feature_dim // 2, feature_dim),
+            nn.ReLU()
+        )
+        
+        # Confidence Module for reliability scoring
+        self.confidence_module = nn.Sequential(
             nn.Linear(feature_dim, feature_dim // 2),
             nn.ReLU(),
             nn.Linear(feature_dim // 2, 1),
@@ -37,9 +47,14 @@ class ReliabilityModule(nn.Module):
         )
 
     def forward(self, lidar_features, camera_features):
-        # Compute reliability scores for each modality
-        lidar_reliability = self.fc(lidar_features)
-        camera_reliability = self.fc(camera_features)
+        # Align features using the Contrastive Module
+        lidar_aligned = self.contrastive_module(lidar_features)
+        camera_aligned = self.contrastive_module(camera_features)
+
+        # Compute reliability scores using the Confidence Module
+        lidar_reliability = self.confidence_module(lidar_aligned)
+        camera_reliability = self.confidence_module(camera_aligned)
+        
         return lidar_reliability, camera_reliability
 
 
@@ -62,21 +77,18 @@ class ConfidenceWeightedMutualCrossAttention(nn.Module):
 
 
 class ReliFusion(nn.Module):
-    def __init__(self, input_dim, hidden_dim):
+    def __init__(self, lidar_input_dim=4, camera_input_channels=3, hidden_dim=256):
         super(ReliFusion, self).__init__()
-        self.feature_extractor = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, hidden_dim, kernel_size=3, stride=1, padding=1)
-        )
-        self.stfa = SpatioTemporalFeatureAggregation(input_dim, hidden_dim)
+        self.lidar_backbone = VoxelNetBackbone(input_dim=lidar_input_dim, hidden_dim=hidden_dim)
+        self.camera_backbone = ConvMixerBackbone(input_channels=camera_input_channels, hidden_dim=hidden_dim)
+        self.stfa = SpatioTemporalFeatureAggregation(hidden_dim, hidden_dim)
         self.reliability_module = ReliabilityModule(hidden_dim)
         self.cw_mca = ConfidenceWeightedMutualCrossAttention(hidden_dim)
 
     def forward(self, lidar_input, camera_input):
-        # Extract features
-        lidar_features = self.feature_extractor(lidar_input)
-        camera_features = self.feature_extractor(camera_input)
+        # Extract features using backbones
+        lidar_features = self.lidar_backbone(lidar_input)
+        camera_features = self.camera_backbone(camera_input)
 
         # Spatio-temporal feature aggregation
         spatial_features, temporal_features = self.stfa(lidar_features, camera_features)
@@ -88,3 +100,11 @@ class ReliFusion(nn.Module):
         fused_features = self.cw_mca(spatial_features, temporal_features, lidar_confidence, camera_confidence)
 
         return fused_features
+
+# Example usage
+if __name__ == "__main__":
+    model = ReliFusion()
+    lidar_input = torch.rand(1, 4, 32, 32, 32)  # Example LiDAR input
+    camera_input = torch.rand(1, 3, 448, 800)  # Example camera input
+    output = model(lidar_input, camera_input)
+    print("Output shape:", output.shape)
