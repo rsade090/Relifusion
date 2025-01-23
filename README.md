@@ -13,3 +13,4 @@ This repository contains the implementation of ReliFusion, a novel LiDAR-camera 
 
 ## Installation
 To set up the environment, clone this repository and install the dependencies in requirements.txt file.
+For Loading Nuscenes Datset we have used MMDetection3d github repo related files.
