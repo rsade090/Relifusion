@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from lidar_backbone import VoxelNetBackbone
-from camera_backbone import ConvMixerBackbone
+from VoxelNet import VoxelNetBackbone
+from ConvMixer import ConvMixerBackbone
 
 class SpatioTemporalFeatureAggregation(nn.Module):
     def __init__(self, input_dim, hidden_dim):
