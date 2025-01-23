@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader
-from nuscenes_loader import NuScenesDataset
-from relifusion_model import ReliFusion
+from DataSet import NuScenesDataset
+from model import ReliFusion
 from utils.visualization_utils import overlay_lidar_on_image, plot_feature_map
 from utils.data_utils import voxelize_point_cloud
 import argparse
