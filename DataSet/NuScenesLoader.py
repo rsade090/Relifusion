@@ -5,8 +5,35 @@ from nuscenes.nuscenes import NuScenes
 from nuscenes.utils.data_classes import LidarPointCloud
 from nuscenes.utils.geometry_utils import view_points
 import torch
+from .det3_dataset import Det3DDataset
+from mmdet3d.registry import DATASETS
+from mmdet3d.structures import LiDARInstance3DBoxes
+from mmdet3d.structures.bbox_3d.cam_box3d import CameraInstance3DBoxes
 
-class NuScenesDataset(Dataset):
+class NuScenesDataset(Det3DDataset):
+
+
+
+    METAINFO = {
+        'classes':
+        ('car', 'truck', 'trailer', 'bus', 'construction_vehicle', 'bicycle',
+         'motorcycle', 'pedestrian', 'traffic_cone', 'barrier'),
+        'version':
+        'v1.0-trainval',
+        'palette': [
+            (255, 158, 0),  # Orange
+            (255, 99, 71),  # Tomato
+            (255, 140, 0),  # Darkorange
+            (255, 127, 80),  # Coral
+            (233, 150, 70),  # Darksalmon
+            (220, 20, 60),  # Crimson
+            (255, 61, 99),  # Red
+            (0, 0, 230),  # Blue
+            (47, 79, 79),  # Darkslategrey
+            (112, 128, 144),  # Slategrey
+        ]
+    }
+    
     def __init__(self, root_dir, version='v1.0-mini', split='train', num_frames=5, transforms=None):
         """
         Dataset class for NuScenes data.
@@ -17,6 +44,16 @@ class NuScenesDataset(Dataset):
         :param num_frames: Number of consecutive frames to use (only for training).
         :param transforms: Optional transforms to apply to the data.
         """
+        super().__init__(
+        data_root=data_root,
+        ann_file=ann_file,
+        modality=modality,
+        pipeline=pipeline,
+        box_type_3d=box_type_3d,
+        filter_empty_gt=filter_empty_gt,
+        test_mode=test_mode,
+        **kwargs)
+        
         self.nusc = NuScenes(version=version, dataroot=root_dir, verbose=True)
         self.split = split
         self.num_frames = num_frames
