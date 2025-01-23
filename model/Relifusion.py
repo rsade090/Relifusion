@@ -61,18 +61,26 @@ class ReliabilityModule(nn.Module):
 class ConfidenceWeightedMutualCrossAttention(nn.Module):
     def __init__(self, feature_dim):
         super(ConfidenceWeightedMutualCrossAttention, self).__init__()
-        self.query_proj = nn.Linear(feature_dim, feature_dim)
-        self.key_proj = nn.Linear(feature_dim, feature_dim)
-        self.value_proj = nn.Linear(feature_dim, feature_dim)
+        self.lidar_attention = nn.MultiheadAttention(embed_dim=feature_dim, num_heads=4)
+        self.camera_attention = nn.MultiheadAttention(embed_dim=feature_dim, num_heads=4)
+        self.lidar_proj = nn.Linear(feature_dim, feature_dim)
+        self.camera_proj = nn.Linear(feature_dim, feature_dim)
 
     def forward(self, lidar_features, camera_features, lidar_confidence, camera_confidence):
-        # Apply cross-attention
-        lidar_query = self.query_proj(lidar_features) * lidar_confidence
-        camera_key = self.key_proj(camera_features)
-        camera_value = self.value_proj(camera_features)
-        
-        cross_attention = torch.softmax(torch.matmul(lidar_query, camera_key.transpose(-2, -1)), dim=-1)
-        fused_features = torch.matmul(cross_attention, camera_value)
+        # Lidar-to-Camera Attention
+        lidar_to_camera_query = self.lidar_proj(lidar_features) * lidar_confidence
+        camera_key = self.camera_proj(camera_features)
+        camera_value = self.camera_proj(camera_features)
+        lidar_to_camera_attention, _ = self.lidar_attention(lidar_to_camera_query, camera_key, camera_value)
+
+        # Camera-to-Lidar Attention
+        camera_to_lidar_query = self.camera_proj(camera_features) * camera_confidence
+        lidar_key = self.lidar_proj(lidar_features)
+        lidar_value = self.lidar_proj(lidar_features)
+        camera_to_lidar_attention, _ = self.camera_attention(camera_to_lidar_query, lidar_key, lidar_value)
+
+        # Combine both attentions
+        fused_features = lidar_to_camera_attention + camera_to_lidar_attention
         return fused_features
 
 
