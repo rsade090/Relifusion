@@ -4,6 +4,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from nuscenes_loader import NuScenesDataset
 from relifusion_model import ReliFusion
+from logger import Logger
+from torch.utils.tensorboard import SummaryWriter
 import argparse
 
 # Argument Parser
@@ -17,6 +19,7 @@ parser.add_argument('--epochs', type=int, default=10, help="Number of training e
 parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate for optimizer (default: 1e-4)")
 parser.add_argument('--weight_decay', type=float, default=1e-5, help="Weight decay for optimizer (default: 1e-5)")
 parser.add_argument('--save_path', type=str, default="model.pth", help="Path to save the trained model (default: model.pth)")
+parser.add_argument('--log_dir', type=str, default="logs", help="Directory to save training logs (default: logs)")
 args = parser.parse_args()
 
 # Configuration from Arguments
@@ -29,23 +32,28 @@ EPOCHS = args.epochs
 LR = args.lr
 WEIGHT_DECAY = args.weight_decay
 SAVE_PATH = args.save_path
+LOG_DIR = args.log_dir
+
+# Initialize Logger and TensorBoard Writer
+logger = Logger(log_dir=LOG_DIR, log_file="training.log")
+writer = SummaryWriter(log_dir=LOG_DIR)
 
 # Initialize Dataset and DataLoader
-print("Loading NuScenes Dataset...")
+logger.info("Loading NuScenes Dataset...")
 train_dataset = NuScenesDataset(root_dir=NUSCENES_ROOT, version=VERSION, split="train", t=5)
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
 
 # Initialize Model
-print("Initializing ReliFusion Model...")
+logger.info("Initializing ReliFusion Model...")
 model = ReliFusion(lidar_input_dim=4, camera_input_channels=3, hidden_dim=256).to(DEVICE)
 
 # Loss and Optimizer
-print("Setting up Loss and Optimizer...")
+logger.info("Setting up Loss and Optimizer...")
 criterion = nn.MSELoss()  # Example: replace with appropriate multi-task loss
 optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 
 # Training Loop
-print("Starting Training...")
+logger.info("Starting Training...")
 for epoch in range(EPOCHS):
     model.train()
     epoch_loss = 0
@@ -69,11 +77,17 @@ for epoch in range(EPOCHS):
         optimizer.step()
 
         epoch_loss += loss.item()
-        print(f"Epoch [{epoch + 1}/{EPOCHS}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss.item():.4f}")
+        logger.info(f"Epoch [{epoch + 1}/{EPOCHS}], Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss.item():.4f}")
 
-    print(f"Epoch [{epoch + 1}/{EPOCHS}] completed with Average Loss: {epoch_loss / len(train_loader):.4f}")
+        # Log to TensorBoard
+        writer.add_scalar("Loss/Batch", loss.item(), epoch * len(train_loader) + batch_idx)
+
+    avg_loss = epoch_loss / len(train_loader)
+    logger.info(f"Epoch [{epoch + 1}/{EPOCHS}] completed with Average Loss: {avg_loss:.4f}")
+    writer.add_scalar("Loss/Epoch", avg_loss, epoch)
 
 # Save Model
-print(f"Saving Model to {SAVE_PATH}...")
+logger.info(f"Saving Model to {SAVE_PATH}...")
 torch.save(model.state_dict(), SAVE_PATH)
-print("Training Completed and Model Saved.")
+logger.info("Training Completed and Model Saved.")
+writer.close()
